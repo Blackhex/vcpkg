@@ -1,0 +1,67 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7d52499..e343df0 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -167,6 +167,50 @@ install(
+     ${CMAKE_INSTALL_PREFIX}/include/LLVMSPIRVLib
+ )
+ 
++function(llvm_spirv_pc_collect item)
++  get_property(visited GLOBAL PROPERTY LLVM_SPIRV_PC_VISITED)
++  if(item STREQUAL "" OR item IN_LIST visited)
++    return()
++  endif()
++  set_property(GLOBAL APPEND PROPERTY LLVM_SPIRV_PC_VISITED "${item}")
++  if(TARGET "${item}" AND item MATCHES "^LLVM")
++    get_target_property(deps "${item}" INTERFACE_LINK_LIBRARIES)
++    if(deps)
++      string(REGEX REPLACE "\\$<LINK_ONLY:([^<>]+)>" "\\1" deps "${deps}")
++      string(GENEX_STRIP "${deps}" deps)
++      foreach(dep IN LISTS deps)
++        llvm_spirv_pc_collect("${dep}")
++      endforeach()
++    endif()
++  endif()
++  set_property(GLOBAL APPEND PROPERTY LLVM_SPIRV_PC_ORDER "${item}")
++endfunction()
++
++# Reverse post-order lists every static library before its dependencies.
++llvm_spirv_pc_collect(LLVMSPIRVLib)
++get_property(pc_items GLOBAL PROPERTY LLVM_SPIRV_PC_ORDER)
++list(REVERSE pc_items)
++list(REMOVE_ITEM pc_items LLVMSPIRVLib)
++set(LLVM_SPIRV_PC_LIBS_PRIVATE "")
++set(LLVM_SPIRV_PC_REQUIRES_PRIVATE "")
++foreach(item IN LISTS pc_items)
++  if(item STREQUAL "ZLIB::ZLIB")
++    list(APPEND LLVM_SPIRV_PC_REQUIRES_PRIVATE zlib)
++  elseif(item MATCHES "^zstd::")
++    list(APPEND LLVM_SPIRV_PC_REQUIRES_PRIVATE libzstd)
++  elseif(item STREQUAL "DIASDK::Diaguids")
++    # Like llvm-config, leave the machine-specific DIA SDK path out.
++  elseif(item MATCHES "::" OR IS_ABSOLUTE "${item}" OR (TARGET "${item}" AND NOT item MATCHES "^LLVM"))
++    message(FATAL_ERROR "No pkg-config equivalent for link item ${item}")
++  elseif(item MATCHES "^-")
++    list(APPEND LLVM_SPIRV_PC_LIBS_PRIVATE "${item}")
++  else()
++    list(APPEND LLVM_SPIRV_PC_LIBS_PRIVATE "-l${item}")
++  endif()
++endforeach()
++list(JOIN LLVM_SPIRV_PC_LIBS_PRIVATE " " LLVM_SPIRV_PC_LIBS_PRIVATE)
++list(JOIN LLVM_SPIRV_PC_REQUIRES_PRIVATE " " LLVM_SPIRV_PC_REQUIRES_PRIVATE)
++
+ configure_file(LLVMSPIRVLib.pc.in ${CMAKE_BINARY_DIR}/LLVMSPIRVLib.pc @ONLY)
+ install(
+   FILES
+diff --git a/LLVMSPIRVLib.pc.in b/LLVMSPIRVLib.pc.in
+index 814c592..5daf21b 100644
+--- a/LLVMSPIRVLib.pc.in
++++ b/LLVMSPIRVLib.pc.in
+@@ -8,5 +8,7 @@ Description: LLVM/SPIR-V bi-directional translator
+ Version: @LLVM_SPIRV_VERSION@
+ URL: https://github.com/KhronosGroup/SPIRV-LLVM-Translator
+ 
++Requires.private: @LLVM_SPIRV_PC_REQUIRES_PRIVATE@
+ Libs: -L${libdir} -lLLVMSPIRVLib
++Libs.private: @LLVM_SPIRV_PC_LIBS_PRIVATE@
+ Cflags: -I${includedir}

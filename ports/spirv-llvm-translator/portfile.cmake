@@ -6,6 +6,8 @@ vcpkg_from_github(
     REF "v${VERSION}"
     SHA512 fff2224f63926819e29d5f2daa54015b486497f131ecf4b563cfde75a594812a5c395b67971022be13de42d7429db1fc747c725c15978894baa3a62013d98777
     HEAD_REF main
+    PATCHES
+        pkgconfig-llvm-libs.patch
 )
 
 vcpkg_cmake_configure(
